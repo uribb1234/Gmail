@@ -9,7 +9,7 @@ import schedule
 import threading
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # הגדרת לוגים מפורטים
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -61,7 +61,7 @@ async def fetch_news():
                     link,
                     ROW_NUMBER() OVER (PARTITION BY site ORDER BY date DESC, time DESC) AS rn
                 FROM news_updates
-                WHERE site IN ('ynet', 'arutz7', 'walla', 'keshet12', 'reshet13', 'channel14', 'sport5', 'sport1', 'one')
+                WHERE site IN ('ynet', 'arutz7', 'walla', 'keshet12', 'reshet13', 'sport5', 'sport1', 'one')
             )
             SELECT 
                 'כללי' AS category,
@@ -70,7 +70,7 @@ async def fetch_news():
                 headline,
                 link
             FROM RankedNews
-            WHERE site IN ('ynet', 'arutz7', 'walla', 'keshet12', 'reshet13', 'channel14')
+            WHERE site IN ('ynet', 'arutz7', 'walla', 'keshet12', 'reshet13')
             AND rn <= 3
             UNION ALL
             SELECT 
@@ -129,7 +129,9 @@ def send_email(content):
     logger.debug("מתחיל לשלוח מייל")
     try:
         msg = MIMEText(content)
-        msg['Subject'] = f"מבזקי חדשות - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        # התאמת השעה לזמן ישראל (UTC+3)
+        israel_time = datetime.now() + timedelta(hours=3)
+        msg['Subject'] = f"מבזקי חדשות - {israel_time.strftime('%Y-%m-%d %H:%M')}"
         msg['From'] = SMTP_USER
         msg['To'] = ", ".join(RECIPIENTS)
         
@@ -178,7 +180,6 @@ async def keep_alive():
                         logger.debug("פינג פנימי הצליח")
                     else:
                         logger.warning(f"פינג פנימי נכשל עם סטטוס {response.status}")
-                        # נוסיף לוג של תוכן התגובה כדי להבין את השגיאה
                         response_text = await response.text()
                         logger.warning(f"תוכן התגובה: {response_text}")
         except Exception as e:
@@ -214,6 +215,6 @@ if __name__ == "__main__":
     port = int(os.getenv('PORT', 10000))
     logger.info(f"מתחיל את השרת על פורט {port}")
     
-    # הפעלת Flask בצורה ישירה (ללא שרשור נפרד כדי למנוע בעיות עם Render)
+    # הפעלת Flask בצורה ישירה
     threading.Thread(target=main, daemon=True).start()
     app.run(host='0.0.0.0', port=port, use_reloader=False)
