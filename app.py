@@ -78,7 +78,13 @@ async def fetch_news():
             FROM RankedNews
             WHERE site IN ('sport5', 'sport1', 'one')
             AND rn <= 3
-            ORDER BY category DESC, site, time DESC
+            ORDER BY 
+                CASE 
+                    WHEN category = 'כללי' THEN 1 
+                    WHEN category = 'ספורט' THEN 2 
+                END, 
+                site, 
+                time DESC
             """
             await cursor.execute(query)
             results = await cursor.fetchall()
@@ -134,15 +140,16 @@ async def send_news_email():
 
 # Endpoint לפינג כדי לשמור על השרת פעיל
 @app.route('/ping', methods=['GET'])
-async def ping():
+def ping():
     return "Pong", 200
 
-# פינג פנימי כל 5 דקות (בדומה לקוד הקודם)
+# פינג פנימי כל 5 דקות
 async def keep_alive():
     while True:
         try:
             async with aiohttp.ClientSession() as session:
                 url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000") + "/ping"
+                logger.info(f"שולח פינג ל-{url}")
                 async with session.get(url) as response:
                     if response.status == 200:
                         logger.debug("פינג פנימי הצליח")
