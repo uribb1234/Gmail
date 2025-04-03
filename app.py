@@ -11,8 +11,8 @@ import time
 import logging
 from datetime import datetime
 
-# הגדרת לוגים
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# הגדרת לוגים מפורטים
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -34,16 +34,20 @@ SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')  # App Password עבור Gmail
 RECIPIENTS = os.getenv('EMAIL_RECIPIENTS').split(',')  # רשימה מופרדת בפסיקים
 
 async def get_db_connection():
+    logger.debug("מנסה להתחבר לדטאבייס")
     try:
         conn = await aiomysql.connect(**DB_CONFIG)
+        logger.debug("חיבור לדטאבייס הצליח")
         return conn
     except Exception as e:
         logger.error(f"שגיאה בחיבור לדטאבייס: {e}")
         return None
 
 async def fetch_news():
+    logger.debug("מתחיל לשלוף חדשות")
     conn = await get_db_connection()
     if not conn:
+        logger.error("שגיאה: אין חיבור לדטאבייס")
         return "שגיאה בחיבור לדטאבייס"
     
     try:
@@ -86,8 +90,10 @@ async def fetch_news():
                 site, 
                 time DESC
             """
+            logger.debug("מבצע שאילתה: %s", query)
             await cursor.execute(query)
             results = await cursor.fetchall()
+            logger.debug("שליפת חדשות הושלמה: %d תוצאות", len(results))
             return results
     except Exception as e:
         logger.error(f"שגיאה בשליפת נתונים: {e}")
@@ -96,7 +102,9 @@ async def fetch_news():
         conn.close()
 
 def format_news_email(news):
+    logger.debug("מפרמט את המייל")
     if isinstance(news, str):  # במקרה של שגיאה
+        logger.error("שגיאה בנתונים: %s", news)
         return news
     
     email_body = "מבזקי חדשות עדכניים\n\n"
@@ -114,9 +122,11 @@ def format_news_email(news):
         link = item['link']
         email_body += f"{site} [{time}]: {headline}\n{link}\n\n"
     
+    logger.debug("פורמט המייל הושלם")
     return email_body
 
 def send_email(content):
+    logger.debug("מתחיל לשלוח מייל")
     try:
         msg = MIMEText(content)
         msg['Subject'] = f"מבזקי חדשות - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -124,6 +134,7 @@ def send_email(content):
         msg['To'] = ", ".join(RECIPIENTS)
         
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            logger.debug("מתחבר לשרת SMTP")
             server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_USER, RECIPIENTS, msg.as_string())
@@ -141,7 +152,18 @@ async def send_news_email():
 # Endpoint לפינג כדי לשמור על השרת פעיל
 @app.route('/ping', methods=['GET'])
 def ping():
-    return "Pong", 200
+    logger.debug("קיבלתי בקשת פינג")
+    try:
+        return "Pong", 200
+    except Exception as e:
+        logger.error(f"שגיאה ב-endpoint /ping: {e}")
+        return "Error", 500
+
+# Endpoint לבדיקה נוספת
+@app.route('/', methods=['GET'])
+def home():
+    logger.debug("קיבלתי בקשה ל-/")
+    return "Server is running", 200
 
 # פינג פנימי כל 5 דקות
 async def keep_alive():
@@ -149,18 +171,23 @@ async def keep_alive():
         try:
             async with aiohttp.ClientSession() as session:
                 url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000") + "/ping"
-                logger.info(f"שולח פינג ל-{url}")
+                logger.debug(f"שולח פינג ל-{url}")
                 async with session.get(url) as response:
+                    logger.debug(f"תגובה מהפינג: סטטוס {response.status}")
                     if response.status == 200:
                         logger.debug("פינג פנימי הצליח")
                     else:
                         logger.warning(f"פינג פנימי נכשל עם סטטוס {response.status}")
+                        # נוסיף לוג של תוכן התגובה כדי להבין את השגיאה
+                        response_text = await response.text()
+                        logger.warning(f"תוכן התגובה: {response_text}")
         except Exception as e:
             logger.error(f"שגיאה בפינג פנימי: {e}")
         await asyncio.sleep(300)  # 5 דקות
 
 # תזמון שליחת המיילים
 def run_scheduler():
+    logger.debug("מתחיל scheduler")
     # שליחה כל שעה עגולה
     schedule.every().hour.at(":00").do(lambda: asyncio.run(send_news_email()))
     
@@ -168,29 +195,25 @@ def run_scheduler():
         schedule.run_pending()
         time.sleep(60)
 
-# פונקציה להפעלת ה-Flask וה-Keep-Alive בלולאת asyncio
-async def run_app_and_keep_alive():
+# פונקציה להפעלת ה-Flask וה-Keep-Alive
+def main():
     # התחלת ה-scheduler בשרשור נפרד
     scheduler_thread = threading.Thread(target=run_scheduler)
     scheduler_thread.daemon = True
     scheduler_thread.start()
 
     # שליחת מייל ראשון מיידית
-    await send_news_email()
+    asyncio.run(send_news_email())
 
-    # התחלת ה-Keep-Alive
-    await keep_alive()
+    # התחלת ה-Keep-Alive בלולאה אסינכרונית
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(keep_alive())
 
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 10000))
+    logger.info(f"מתחיל את השרת על פורט {port}")
     
-    # התחלת ה-Flask בשרשור נפרד
-    def run_flask():
-        app.run(host='0.0.0.0', port=port, use_reloader=False)
-    
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-
-    # הפעלת ה-Keep-Alive והמייל הראשון בלולאת asyncio
-    asyncio.run(run_app_and_keep_alive())
+    # הפעלת Flask בצורה ישירה (ללא שרשור נפרד כדי למנוע בעיות עם Render)
+    threading.Thread(target=main, daemon=True).start()
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
