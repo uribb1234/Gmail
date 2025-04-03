@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# הגדרת חיבור ל-MySQL ממשתני סביבה
+# הגדרת חיבור ל-MySQL ממשתני סביבה של Render
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'db': os.getenv('DB_NAME'),
-    'port': int(os.getenv('DB_PORT', 3306))
+    'host': os.getenv('MYSQL_HOST'),
+    'user': os.getenv('MYSQL_USER'),
+    'password': os.getenv('MYSQL_PASSWORD'),
+    'db': os.getenv('MYSQL_DATABASE'),
+    'port': int(os.getenv('MYSQL_PORT', 3306))
 }
 
 # הגדרת פרטי SMTP ממשתני סביבה
